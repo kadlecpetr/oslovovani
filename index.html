@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="cs"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Oslovování</title>
+<style>
+/* Layout: sticky toolbar + stats strip, one row per oslovený with step chips (zpráva → FU1 → FU2 → FU3), detail expands inline */
+:root{
+  --bg:#f5f7f8;--surface:#fff;--fg:#17232b;--muted:#62737d;--line:#dbe3e8;
+  --accent:#1f6f8b;--accent-fg:#fff;--s1:#dbe9d0;--s1f:#3d6a2a;--s2:#cfe0e6;--s2f:#235a70;
+  --reply:#f6e3cc;--replyf:#9a5a14;--ok:#bff0a8;--okf:#1d6b0e;--danger:#b3261e;
+  --font:'Inter',system-ui,sans-serif;--head:'Space Grotesk','Inter',system-ui,sans-serif;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0f171c;--surface:#17232b;--fg:#e6eef2;--muted:#8fa2ad;--line:#2a3a44;
+  --accent:#5db7d6;--accent-fg:#0b1a21;--s1:#27401e;--s1f:#a9d98f;--s2:#1f3d4a;--s2f:#8fcbe0;
+  --reply:#4a3418;--replyf:#f2c48a;--ok:#1f4a14;--okf:#a9f08a;--danger:#ff8a80;color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0f171c;--surface:#17232b;--fg:#e6eef2;--muted:#8fa2ad;--line:#2a3a44;
+  --accent:#5db7d6;--accent-fg:#0b1a21;--s1:#27401e;--s1f:#a9d98f;--s2:#1f3d4a;--s2f:#8fcbe0;
+  --reply:#4a3418;--replyf:#f2c48a;--ok:#1f4a14;--okf:#a9f08a;--danger:#ff8a80;color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font:14px/1.45 var(--font);padding-block:20px 60px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.wrap{max-width:980px;margin:0 auto;display:flex;flex-direction:column;gap:14px}
+h1{font:600 24px var(--head);margin:0;letter-spacing:-.01em}
+header{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px}
+.stat{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:10px 12px}
+.stat b{display:block;font:600 22px var(--head);font-variant-numeric:tabular-nums}
+.stat span{color:var(--muted);font-size:12px}
+.bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+input[type=text],input[type=search],select,textarea{font:inherit;color:var(--fg);background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:7px 10px;min-width:0}
+input[type=search]{flex:1 1 180px}
+textarea{width:100%;resize:vertical}
+button{font:inherit;cursor:pointer;border-radius:6px;border:1px solid var(--line);background:var(--surface);color:var(--fg);padding:7px 12px}
+button.pri{background:var(--accent);color:var(--accent-fg);border-color:var(--accent);font-weight:600}
+button.del{color:var(--danger)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{border-radius:999px;padding:4px 12px;font-size:13px}
+.chip[aria-pressed=true]{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+.group{font:600 12px var(--head);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:10px 0 2px}
+.row{background:var(--surface);border:1px solid var(--line);border-radius:8px}
+.main{display:flex;align-items:center;gap:10px;padding:8px 10px;flex-wrap:wrap}
+.name{flex:1 1 180px;min-width:0;font-weight:500;cursor:pointer;background:none;border:0;text-align:left;padding:4px 0}
+.name small{display:block;color:var(--muted);font-weight:400;font-size:12px;overflow-wrap:anywhere}
+.steps{display:flex;gap:4px;flex-wrap:wrap}
+.step{border-radius:6px;padding:5px 9px;font-size:12px;border:1px solid var(--line);color:var(--muted);background:transparent;font-weight:500}
+.step.on.s1{background:var(--s1);color:var(--s1f);border-color:transparent}
+.step.on.s2{background:var(--s2);color:var(--s2f);border-color:transparent}
+.step.reply.on{background:var(--reply);color:var(--replyf);border-color:transparent}
+.step.ok.on{background:var(--ok);color:var(--okf);border-color:transparent}
+.next{font-size:12px;color:var(--muted);min-width:70px;text-align:right}
+.detail{border-top:1px solid var(--line);padding:10px;display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px}
+.detail label{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--muted)}
+.detail .full{grid-column:1/-1}
+.detail .act{display:flex;justify-content:space-between;gap:8px}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:12px;display:flex;flex-direction:column;gap:8px}
+.empty{color:var(--muted);text-align:center;padding:30px 10px}
+.sync{font-size:12px;color:var(--muted)}
+@media(max-width:560px){.next{display:none}}
+</style>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;600&display=swap">
+
+</head><body>
+<div class="wrap">
+  <header><h1>Oslovování</h1><span class="sync" id="sync">Načítám…</span></header>
+  <div class="stats" id="stats"></div>
+  <div class="bar">
+    <input type="search" id="q" placeholder="Hledat jméno, e-mail, telefon, poznámku…" aria-label="Hledat">
+    <select id="grp" aria-label="Skupina"></select>
+    <button class="pri" id="addBtn">+ Přidat</button>
+    <button id="impBtn">Import seznamu</button>
+    <button onclick="exportData()">Záloha (stáhnout)</button>
+    <label class="sync" style="cursor:pointer;text-decoration:underline">Obnovit ze zálohy<input type="file" accept=".json" hidden onchange="var f=this.files[0];if(f)f.text().then(importData)"></label>
+  </div>
+  <div class="chips" id="chips"></div>
+  <div class="panel" id="addPanel" hidden>
+    <div class="bar">
+      <input type="text" id="nName" placeholder="Jméno (např. Jan Novák – developer)" style="flex:2 1 220px">
+      <input type="text" id="nGrp" placeholder="Skupina" list="grpList" style="flex:1 1 140px">
+      <datalist id="grpList"></datalist>
+      <input type="text" id="nPhone" placeholder="Telefon" style="flex:1 1 130px">
+      <input type="text" id="nMail" placeholder="E-mail" style="flex:1 1 160px">
+    </div>
+    <div class="bar"><button class="pri" id="nSave">Uložit</button><button id="nCancel">Zrušit</button></div>
+  </div>
+  <div class="panel" id="impPanel" hidden>
+    <label for="impTxt">Vlož jména, jedno na řádek. Volitelně „Jméno ; telefon ; e-mail“. Přidají se do skupiny níže.</label>
+    <textarea id="impTxt" rows="6"></textarea>
+    <div class="bar"><input type="text" id="impGrp" placeholder="Skupina" list="grpList"><button class="pri" id="impSave">Importovat</button><button id="impCancel">Zrušit</button></div>
+  </div>
+  <div id="list"></div>
+</div>
+
+<script>
+/* Lokální úložiště: data jsou v prohlížeči (localStorage) */
+(function(){
+  var KEY='oslovovani-v1',subs=[];
+  function load(){try{var s=localStorage.getItem(KEY);if(s)return JSON.parse(s)}catch(e){}return null}
+  var data=load()||{};
+  function persist(){try{localStorage.setItem(KEY,JSON.stringify(data))}catch(e){}}
+  function snap(){var docs=Object.keys(data).map(function(id){return{id:id,data:function(){return Object.assign({},data[id])}}});return{docs:docs}}
+  function emit(){persist();subs.forEach(function(f){f(snap())})}
+  var n=0;
+  var col={
+    onSnapshot:function(f){subs.push(f);setTimeout(function(){f(snap())},0);return function(){}},
+    add:function(d){var id='n'+Date.now()+(n++);data[id]=d;emit();return Promise.resolve()},
+    doc:function(id){return{
+      update:function(p){data[id]=Object.assign(data[id]||{},p);emit();return Promise.resolve()},
+      delete:function(){delete data[id];emit();return Promise.resolve()}}}
+  };
+  window.claude={use:function(){return Promise.resolve({collection:function(){return col}})}};
+  window.exportData=function(){var a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(data,null,1)],{type:'application/json'}));a.download='oslovovani-zaloha.json';a.click()};
+  window.importData=function(t){data=JSON.parse(t);emit()};
+})();
+</script>
+<script>
+(function(){
+  var col=null,people=[],open={},filter='all',loaded=false;
+  var $=function(i){return document.getElementById(i)};
+  var STEPS=[['msg','Zpráva','s1'],['fu1','FU 1','s2'],['fu2','FU 2','s2'],['fu3','FU 3','s2']];
+  function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
+  function nextStep(p){
+    if(p.success)return'Hotovo ✓';if(p.replied)return'Odpověděl';
+    for(var i=0;i<STEPS.length;i++)if(!p[STEPS[i][0]])return i?'Čeká '+STEPS[i][1]:'Neoslovený';
+    return'Vyčerpáno';
+  }
+  function stage(p){
+    if(p.success)return'success';if(p.replied)return'replied';
+    if(!p.msg)return'new';return'wait';
+  }
+  var FILTERS=[['all','Všichni'],['new','Neoslovení'],['wait','Čeká na odpověď'],['replied','Odpověděli'],['success','Úspěšní']];
+  function render(){
+    var q=$('q').value.trim().toLowerCase(),g=$('grp').value;
+    var groups=[];people.forEach(function(p){var x=p.group||'Bez skupiny';if(groups.indexOf(x)<0)groups.push(x)});
+    var cur=$('grp').value;
+    $('grp').innerHTML='<option value="">Všechny skupiny</option>'+groups.map(function(x){return'<option>'+esc(x)+'</option>'}).join('');
+    $('grp').value=groups.indexOf(cur)>=0?cur:'';g=$('grp').value;
+    $('grpList').innerHTML=groups.map(function(x){return'<option value="'+esc(x)+'">'}).join('');
+    var cnt=function(f){return people.filter(function(p){return f=='all'||stage(p)==f}).length};
+    $('chips').innerHTML=FILTERS.map(function(f){return'<button class="chip" data-f="'+f[0]+'" aria-pressed="'+(filter==f[0])+'">'+f[1]+' '+cnt(f[0])+'</button>'}).join('');
+    var n=people.length,sent=people.filter(function(p){return p.msg}).length,rep=people.filter(function(p){return p.replied}).length,ok=people.filter(function(p){return p.success}).length;
+    $('stats').innerHTML=[[n,'Lidí celkem'],[sent,'Osloveno'],[n-sent,'Zbývá oslovit'],[rep,'Odpovědělo'],[ok,'Úspěšných'],[sent?Math.round(rep/sent*100)+' %':'–','Míra odpovědí']].map(function(s){return'<div class="stat"><b>'+s[0]+'</b><span>'+s[1]+'</span></div>'}).join('');
+    var rows=people.filter(function(p){
+      if(filter!='all'&&stage(p)!=filter)return false;
+      if(g&&(p.group||'Bez skupiny')!=g)return false;
+      if(q&&[p.name,p.email,p.phone,p.note].join(' ').toLowerCase().indexOf(q)<0)return false;
+      return true});
+    if(!rows.length){$('list').innerHTML='<div class="empty">'+(loaded?(n?'Nikdo neodpovídá filtru.':'Zatím tu nikdo není. Klikni na „+ Přidat“ nebo „Import seznamu“.'):'Načítám…')+'</div>';return}
+    var html='',last=null;
+    rows.forEach(function(p){
+      var gp=p.group||'Bez skupiny';
+      if(gp!==last){html+='<div class="group">'+esc(gp)+'</div>';last=gp}
+      var sub=[p.phone,p.email].filter(Boolean).join(' · ');
+      html+='<div class="row" data-id="'+p.id+'"><div class="main"><button class="name" data-a="tog">'+esc(p.name)+(sub?'<small>'+esc(sub)+'</small>':'')+'</button><div class="steps">'
+        +STEPS.map(function(s){return'<button class="step '+s[2]+(p[s[0]]?' on':'')+'" data-a="t" data-k="'+s[0]+'" aria-pressed="'+!!p[s[0]]+'">'+s[1]+'</button>'}).join('')
+        +'<button class="step reply'+(p.replied?' on':'')+'" data-a="t" data-k="replied" aria-pressed="'+!!p.replied+'">Odpověď</button>'
+        +'<button class="step ok'+(p.success?' on':'')+'" data-a="t" data-k="success" aria-pressed="'+!!p.success+'">Úspěch</button></div>'
+        +'<div class="next">'+nextStep(p)+'</div></div>';
+      if(open[p.id])html+='<div class="detail"><label>Jméno<input type="text" data-f="name" value="'+esc(p.name)+'"></label><label>Skupina<input type="text" data-f="group" value="'+esc(p.group)+'" list="grpList"></label><label>Telefon<input type="text" data-f="phone" value="'+esc(p.phone)+'"></label><label>E-mail<input type="text" data-f="email" value="'+esc(p.email)+'"></label><label class="full">Poznámka<textarea rows="2" data-f="note">'+esc(p.note)+'</textarea></label><div class="full act"><span class="sync">'+(p.lastAt?'Poslední změna: '+new Date(p.lastAt).toLocaleDateString('cs-CZ'):'')+'</span><button class="del" data-a="del">'+(p._c?'Opravdu smazat?':'Smazat')+'</button></div></div>';
+      html+='</div>';
+    });
+    var keep=document.activeElement&&document.activeElement.id;
+    $('list').innerHTML=html;
+  }
+  function fail(e){$('sync').textContent='Chyba: '+(e&&e.message||e)}
+  function save(id,patch){patch.lastAt=Date.now();col.doc(id).update(patch).catch(fail)}
+  document.addEventListener('click',function(e){
+    var t=e.target.closest('button');if(!t)return;
+    if(t.dataset.f&&t.classList.contains('chip')){filter=t.dataset.f;render();return}
+    var r=t.closest('.row'),id=r&&r.dataset.id,p=id&&people.filter(function(x){return x.id==id})[0];
+    if(t.dataset.a=='tog'){open[id]=!open[id];render()}
+    else if(t.dataset.a=='t'&&p){var k=t.dataset.k,v=!p[k],patch={};patch[k]=v;
+      if(k=='msg'&&!v){patch.fu1=false;patch.fu2=false;patch.fu3=false}
+      if(['fu1','fu2','fu3'].indexOf(k)>=0&&v&&!p.msg)patch.msg=true;
+      if(k=='success'&&v)patch.replied=true;
+      save(id,patch)}
+    else if(t.dataset.a=='del'&&p){if(!p._c){p._c=true;render();setTimeout(function(){p._c=false;render()},4000)}else{col.doc(id).delete().catch(fail)}}
+  });
+  document.addEventListener('change',function(e){
+    var t=e.target,r=t.closest('.row');if(!r||!t.dataset.f)return;
+    var patch={};patch[t.dataset.f]=t.value.trim();save(r.dataset.id,patch);
+  });
+  $('q').addEventListener('input',render);$('grp').addEventListener('change',render);
+  function toggle(id,show){['addPanel','impPanel'].forEach(function(x){$(x).hidden=x!=id||!show})}
+  $('addBtn').onclick=function(){toggle('addPanel',$('addPanel').hidden);$('nName').focus()};
+  $('impBtn').onclick=function(){toggle('impPanel',$('impPanel').hidden)};
+  $('nCancel').onclick=function(){toggle('addPanel',false)};$('impCancel').onclick=function(){toggle('impPanel',false)};
+  var seq=0;
+  function add(name,grp,phone,mail){
+    return col.add({name:name,group:grp,phone:phone||'',email:mail||'',note:'',msg:false,fu1:false,fu2:false,fu3:false,replied:false,success:false,ord:Date.now()*1000+(seq++%1000),lastAt:Date.now()});
+  }
+  $('nSave').onclick=function(){var n=$('nName').value.trim();if(!n||!col)return;
+    add(n,$('nGrp').value.trim()||$('grp').value,$('nPhone').value.trim(),$('nMail').value.trim()).catch(fail);
+    ['nName','nPhone','nMail'].forEach(function(i){$(i).value=''});$('nName').focus()};
+  $('impSave').onclick=function(){if(!col)return;var g=$('impGrp').value.trim()||'Bez skupiny';
+    $('impTxt').value.split('\n').forEach(function(l){var a=l.split(';').map(function(s){return s.trim()});if(a[0])add(a[0],g,a[1],a[2]).catch(fail)});
+    $('impTxt').value='';toggle('impPanel',false)};
+  render();
+  var t0=setTimeout(function(){if(!loaded)$('sync').textContent='Databáze neodpovídá (přihlas se do claude.ai).'},10000);
+  (window.claude?window.claude.use('db'):Promise.resolve(null)).then(function(db){
+    if(!db){$('sync').textContent='Databáze není dostupná.';return}
+    col=db.collection('people');
+    col.onSnapshot(function(s){
+      clearTimeout(t0);loaded=true;
+      people=s.docs.map(function(d){var x=d.data();x.id=d.id;return x});
+      people.sort(function(a,b){return (a.group||'~').localeCompare(b.group||'~','cs')||(a.ord||0)-(b.ord||0)});
+      $('sync').textContent='Uloženo v tomto prohlížeči (dělej občas zálohu)';
+      var a=document.activeElement;if(a&&a.closest&&a.closest('.detail'))return;
+      render();
+    },fail);
+  });
+})();
+</script>
+
+</body></html>
