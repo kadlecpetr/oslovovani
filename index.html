@@ -17,7 +17,7 @@
   --bg:#0f171c;--surface:#17232b;--fg:#e6eef2;--muted:#8fa2ad;--line:#2a3a44;
   --accent:#5db7d6;--accent-fg:#0b1a21;--s1:#27401e;--s1f:#a9d98f;--s2:#1f3d4a;--s2f:#8fcbe0;
   --reply:#4a3418;--replyf:#f2c48a;--ok:#1f4a14;--okf:#a9f08a;--danger:#ff8a80;color-scheme:dark}
-*{box-sizing:border-box}
+*{box-sizing:border-box}[hidden]{display:none!important}
 body{background:var(--bg);color:var(--fg);font:14px/1.45 var(--font);padding-block:20px 60px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
 .wrap{max-width:980px;margin:0 auto;display:flex;flex-direction:column;gap:14px}
 h1{font:600 24px var(--head);margin:0;letter-spacing:-.01em}
@@ -56,6 +56,14 @@ button.del{color:var(--danger)}
 .panel{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:12px;display:flex;flex-direction:column;gap:8px}
 .empty{color:var(--muted);text-align:center;padding:30px 10px}
 .sync{font-size:12px;color:var(--muted)}
+.next{min-width:110px}.next.over{color:var(--danger);font-weight:600}.next.today{color:var(--replyf);font-weight:600}
+.row.over{border-left:3px solid var(--danger)}.row.todayr{border-left:3px solid var(--replyf)}
+.step small{opacity:.8;margin-left:3px;font-weight:400}
+.cfg{font-size:12px;color:var(--muted)}.cfg input{width:48px;padding:3px 6px}
+.todo{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:10px 12px;font-size:13px}
+.todo b{font-family:var(--head)}
+.todo button{margin:3px 4px 0 0;padding:3px 9px;font-size:12px}
+.todo .over{color:var(--danger)}
 @media(max-width:560px){.next{display:none}}
 </style>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;600&display=swap">
@@ -72,7 +80,10 @@ button.del{color:var(--danger)}
     <button onclick="exportData()">Záloha (stáhnout)</button>
     <label class="sync" style="cursor:pointer;text-decoration:underline">Obnovit ze zálohy<input type="file" accept=".json" hidden onchange="var f=this.files[0];if(f)f.text().then(importData)"></label>
   </div>
+  <div class="todo" id="todo" hidden></div>
   <div class="chips" id="chips"></div>
+  <details class="cfg"><summary>Za kolik dní psát znovu</summary>
+    <p>Po zprávě za <input type="number" min="1" id="c1"> dní FU 1, po FU 1 za <input type="number" min="1" id="c2"> dní FU 2, po FU 2 za <input type="number" min="1" id="c3"> dní FU 3. U každého člověka jde termín přepsat ručně v detailu.</p></details>
   <div class="panel" id="addPanel" hidden>
     <div class="bar">
       <input type="text" id="nName" placeholder="Jméno (např. Jan Novák – developer)" style="flex:2 1 220px">
@@ -118,17 +129,37 @@ button.del{color:var(--danger)}
   var col=null,people=[],open={},filter='all',loaded=false;
   var $=function(i){return document.getElementById(i)};
   var STEPS=[['msg','Zpráva','s1'],['fu1','FU 1','s2'],['fu2','FU 2','s2'],['fu3','FU 3','s2']];
+  var cfg={fu1:3,fu2:5,fu3:7};
+  try{var sv=JSON.parse(localStorage.getItem('oslovovani-cfg'));if(sv)cfg=sv}catch(e){}
+  function pad(n){return(n<10?'0':'')+n}
+  function iso(d){return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())}
+  function day(s){var a=s.split('-');return new Date(+a[0],+a[1]-1,+a[2])}
+  function todayIso(){return iso(new Date())}
+  function addDays(s,n){var d=day(s);d.setDate(d.getDate()+n);return iso(d)}
+  function diffDays(s){return Math.round((day(s)-day(todayIso()))/864e5)}
+  function fmt(s){var d=day(s);return d.getDate()+'. '+(d.getMonth()+1)+'.'}
+  /* Další krok: {i, key, d (termín nebo null), diff} nebo null, když už nic nehlídáme */
+  function due(p){
+    if(p.replied||p.success||!p.msg)return null;
+    for(var i=1;i<STEPS.length;i++){var k=STEPS[i][0];
+      if(!p[k]){var prev=p[STEPS[i-1][0]+'At'];var d=p.due||(prev?addDays(prev,cfg[k]):null);
+        return{i:i,name:STEPS[i][1],d:d,diff:d?diffDays(d):null}}}
+    return null}
   function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
   function nextStep(p){
-    if(p.success)return'Hotovo ✓';if(p.replied)return'Odpověděl';
-    for(var i=0;i<STEPS.length;i++)if(!p[STEPS[i][0]])return i?'Čeká '+STEPS[i][1]:'Neoslovený';
-    return'Vyčerpáno';
+    if(p.success)return['Hotovo ✓',''];if(p.replied)return['Odpověděl',''];
+    if(!p.msg)return['Neoslovený',''];
+    var u=due(p);if(!u)return['Vyčerpáno',''];
+    if(!u.d)return[u.name+' – doplň datum',''];
+    if(u.diff<0)return[u.name+' po termínu o '+(-u.diff)+' d','over'];
+    if(u.diff==0)return[u.name+' dnes','today'];
+    return[u.name+' '+fmt(u.d)+' (za '+u.diff+' d)',''];
   }
   function stage(p){
     if(p.success)return'success';if(p.replied)return'replied';
     if(!p.msg)return'new';return'wait';
   }
-  var FILTERS=[['all','Všichni'],['new','Neoslovení'],['wait','Čeká na odpověď'],['replied','Odpověděli'],['success','Úspěšní']];
+  var FILTERS=[['all','Všichni'],['due','K napsání'],['new','Neoslovení'],['wait','Čeká na odpověď'],['replied','Odpověděli'],['success','Úspěšní']];
   function render(){
     var q=$('q').value.trim().toLowerCase(),g=$('grp').value;
     var groups=[];people.forEach(function(p){var x=p.group||'Bez skupiny';if(groups.indexOf(x)<0)groups.push(x)});
@@ -136,27 +167,32 @@ button.del{color:var(--danger)}
     $('grp').innerHTML='<option value="">Všechny skupiny</option>'+groups.map(function(x){return'<option>'+esc(x)+'</option>'}).join('');
     $('grp').value=groups.indexOf(cur)>=0?cur:'';g=$('grp').value;
     $('grpList').innerHTML=groups.map(function(x){return'<option value="'+esc(x)+'">'}).join('');
-    var cnt=function(f){return people.filter(function(p){return f=='all'||stage(p)==f}).length};
+    var isDue=function(p){var u=due(p);return u&&u.diff!==null&&u.diff<=0};var cnt=function(f){return people.filter(function(p){return f=='all'||(f=='due'?isDue(p):stage(p)==f)}).length};
     $('chips').innerHTML=FILTERS.map(function(f){return'<button class="chip" data-f="'+f[0]+'" aria-pressed="'+(filter==f[0])+'">'+f[1]+' '+cnt(f[0])+'</button>'}).join('');
     var n=people.length,sent=people.filter(function(p){return p.msg}).length,rep=people.filter(function(p){return p.replied}).length,ok=people.filter(function(p){return p.success}).length;
     $('stats').innerHTML=[[n,'Lidí celkem'],[sent,'Osloveno'],[n-sent,'Zbývá oslovit'],[rep,'Odpovědělo'],[ok,'Úspěšných'],[sent?Math.round(rep/sent*100)+' %':'–','Míra odpovědí']].map(function(s){return'<div class="stat"><b>'+s[0]+'</b><span>'+s[1]+'</span></div>'}).join('');
     var rows=people.filter(function(p){
-      if(filter!='all'&&stage(p)!=filter)return false;
+      if(filter=='due'){if(!isDue(p))return false}else if(filter!='all'&&stage(p)!=filter)return false;
       if(g&&(p.group||'Bez skupiny')!=g)return false;
       if(q&&[p.name,p.email,p.phone,p.note].join(' ').toLowerCase().indexOf(q)<0)return false;
       return true});
+    if(filter=='due')rows.sort(function(a,b){return due(a).diff-due(b).diff});
+    var dueList=people.filter(isDue).sort(function(a,b){return due(a).diff-due(b).diff});
+    document.title=(dueList.length?'('+dueList.length+') ':'')+'Oslovování';
+    var td=$('todo');td.hidden=!dueList.length;
+    td.innerHTML=dueList.length?'<b>Dnes a po termínu: '+dueList.length+'</b><br>'+dueList.map(function(p){var u=due(p);return'<button data-a="goto" data-id="'+p.id+'" class="'+(u.diff<0?'over':'')+'">'+esc(p.name)+' – '+u.name+(u.diff<0?' (+'+(-u.diff)+' d)':'')+'</button>'}).join(''):'';
     if(!rows.length){$('list').innerHTML='<div class="empty">'+(loaded?(n?'Nikdo neodpovídá filtru.':'Zatím tu nikdo není. Klikni na „+ Přidat“ nebo „Import seznamu“.'):'Načítám…')+'</div>';return}
     var html='',last=null;
     rows.forEach(function(p){
       var gp=p.group||'Bez skupiny';
-      if(gp!==last){html+='<div class="group">'+esc(gp)+'</div>';last=gp}
-      var sub=[p.phone,p.email].filter(Boolean).join(' · ');
-      html+='<div class="row" data-id="'+p.id+'"><div class="main"><button class="name" data-a="tog">'+esc(p.name)+(sub?'<small>'+esc(sub)+'</small>':'')+'</button><div class="steps">'
-        +STEPS.map(function(s){return'<button class="step '+s[2]+(p[s[0]]?' on':'')+'" data-a="t" data-k="'+s[0]+'" aria-pressed="'+!!p[s[0]]+'">'+s[1]+'</button>'}).join('')
+      if(filter!='due'&&gp!==last){html+='<div class="group">'+esc(gp)+'</div>';last=gp}
+      var sub=[p.phone,p.email].filter(Boolean).join(' · ');var ns=nextStep(p);
+      html+='<div class="row'+(ns[1]=='over'?' over':ns[1]=='today'?' todayr':'')+'" data-id="'+p.id+'"><div class="main"><button class="name" data-a="tog">'+esc(p.name)+(sub?'<small>'+esc(sub)+'</small>':'')+'</button><div class="steps">'
+        +STEPS.map(function(s){return'<button class="step '+s[2]+(p[s[0]]?' on':'')+'" data-a="t" data-k="'+s[0]+'" aria-pressed="'+!!p[s[0]]+'">'+s[1]+(p[s[0]]&&p[s[0]+'At']?'<small>'+fmt(p[s[0]+'At'])+'</small>':'')+'</button>'}).join('')
         +'<button class="step reply'+(p.replied?' on':'')+'" data-a="t" data-k="replied" aria-pressed="'+!!p.replied+'">Odpověď</button>'
         +'<button class="step ok'+(p.success?' on':'')+'" data-a="t" data-k="success" aria-pressed="'+!!p.success+'">Úspěch</button></div>'
-        +'<div class="next">'+nextStep(p)+'</div></div>';
-      if(open[p.id])html+='<div class="detail"><label>Jméno<input type="text" data-f="name" value="'+esc(p.name)+'"></label><label>Skupina<input type="text" data-f="group" value="'+esc(p.group)+'" list="grpList"></label><label>Telefon<input type="text" data-f="phone" value="'+esc(p.phone)+'"></label><label>E-mail<input type="text" data-f="email" value="'+esc(p.email)+'"></label><label class="full">Poznámka<textarea rows="2" data-f="note">'+esc(p.note)+'</textarea></label><div class="full act"><span class="sync">'+(p.lastAt?'Poslední změna: '+new Date(p.lastAt).toLocaleDateString('cs-CZ'):'')+'</span><button class="del" data-a="del">'+(p._c?'Opravdu smazat?':'Smazat')+'</button></div></div>';
+        +'<div class="next '+ns[1]+'">'+ns[0]+'</div></div>';
+      if(open[p.id])html+='<div class="detail"><label>Jméno<input type="text" data-f="name" value="'+esc(p.name)+'"></label><label>Skupina<input type="text" data-f="group" value="'+esc(p.group)+'" list="grpList"></label><label>Telefon<input type="text" data-f="phone" value="'+esc(p.phone)+'"></label><label>E-mail<input type="text" data-f="email" value="'+esc(p.email)+'"></label>'+STEPS.map(function(s){return'<label>'+s[1]+' – kdy napsáno<input type="date" data-f="'+s[0]+'At" value="'+esc(p[s[0]+'At']||'')+'"></label>'}).join('')+'<label>Další kontakt (ručně)<input type="date" data-f="due" value="'+esc(p.due||'')+'"></label><label class="full">Poznámka<textarea rows="2" data-f="note">'+esc(p.note)+'</textarea></label><div class="full act"><span class="sync">'+(p.lastAt?'Poslední změna: '+new Date(p.lastAt).toLocaleDateString('cs-CZ'):'')+'</span><button class="del" data-a="del">'+(p._c?'Opravdu smazat?':'Smazat')+'</button></div></div>';
       html+='</div>';
     });
     var keep=document.activeElement&&document.activeElement.id;
@@ -168,18 +204,20 @@ button.del{color:var(--danger)}
     var t=e.target.closest('button');if(!t)return;
     if(t.dataset.f&&t.classList.contains('chip')){filter=t.dataset.f;render();return}
     var r=t.closest('.row'),id=r&&r.dataset.id,p=id&&people.filter(function(x){return x.id==id})[0];
-    if(t.dataset.a=='tog'){open[id]=!open[id];render()}
-    else if(t.dataset.a=='t'&&p){var k=t.dataset.k,v=!p[k],patch={};patch[k]=v;
-      if(k=='msg'&&!v){patch.fu1=false;patch.fu2=false;patch.fu3=false}
-      if(['fu1','fu2','fu3'].indexOf(k)>=0&&v&&!p.msg)patch.msg=true;
+    if(t.dataset.a=='goto'){open[t.dataset.id]=true;render();var el=document.querySelector('[data-id="'+t.dataset.id+'"]');if(el)el.scrollIntoView({block:'center'})}
+    else if(t.dataset.a=='tog'){open[id]=!open[id];render()}
+    else if(t.dataset.a=='t'&&p){var k=t.dataset.k,v=!p[k],patch={};patch[k]=v;patch.due='';if(STEPS.some(function(s){return s[0]==k}))patch[k+'At']=v?todayIso():'';
+      if(k=='msg'&&!v){patch.fu1=false;patch.fu2=false;patch.fu3=false;patch.fu1At='';patch.fu2At='';patch.fu3At=''}
+      if(['fu1','fu2','fu3'].indexOf(k)>=0&&v&&!p.msg){patch.msg=true;patch.msgAt=todayIso()}
       if(k=='success'&&v)patch.replied=true;
       save(id,patch)}
     else if(t.dataset.a=='del'&&p){if(!p._c){p._c=true;render();setTimeout(function(){p._c=false;render()},4000)}else{col.doc(id).delete().catch(fail)}}
   });
   document.addEventListener('change',function(e){
     var t=e.target,r=t.closest('.row');if(!r||!t.dataset.f)return;
-    var patch={};patch[t.dataset.f]=t.value.trim();save(r.dataset.id,patch);
+    var patch={};patch[t.dataset.f]=t.value.trim();save(r.dataset.id,patch);if(t.type=='date')t.blur();
   });
+  ['c1','c2','c3'].forEach(function(i,n){var k=['fu1','fu2','fu3'][n];$(i).value=cfg[k];$(i).addEventListener('change',function(){cfg[k]=Math.max(1,+this.value||1);try{localStorage.setItem('oslovovani-cfg',JSON.stringify(cfg))}catch(e){}render()})});
   $('q').addEventListener('input',render);$('grp').addEventListener('change',render);
   function toggle(id,show){['addPanel','impPanel'].forEach(function(x){$(x).hidden=x!=id||!show})}
   $('addBtn').onclick=function(){toggle('addPanel',$('addPanel').hidden);$('nName').focus()};
