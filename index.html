@@ -61,6 +61,21 @@ button.del{color:var(--danger)}
 .row.over{border-left:3px solid var(--danger)}.row.todayr{border-left:3px solid var(--replyf)}
 .step small{opacity:.8;margin-left:3px;font-weight:400}
 .cfg{font-size:12px;color:var(--muted)}.cfg input{width:48px;padding:3px 6px}
+.plan{display:flex;flex-direction:column;gap:8px}
+.today{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:10px 12px;display:flex;gap:18px;flex-wrap:wrap;align-items:baseline}
+.today b{font:600 26px var(--head);font-variant-numeric:tabular-nums}
+.today span{color:var(--muted);font-size:13px}.today .od{color:var(--danger);font-weight:600}
+.week{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px}
+.day{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:8px;min-height:90px;display:flex;flex-direction:column;gap:4px}
+.day.t{border-color:var(--accent)}
+.day h4{margin:0;font:600 12px var(--head);display:flex;justify-content:space-between;gap:4px}
+.day h4 span{color:var(--muted);font-weight:500}
+.day button{text-align:left;font-size:12px;padding:3px 6px;overflow-wrap:anywhere;line-height:1.25}
+.day button.fu{background:var(--s2);border-color:transparent;color:var(--s2f)}
+.day button.nw{background:var(--s1);border-color:transparent;color:var(--s1f)}
+.day button.over{background:var(--reply);color:var(--replyf);border-color:transparent}
+.day .none{color:var(--muted);font-size:12px}
+@media(max-width:900px){.week{grid-template-columns:repeat(2,minmax(0,1fr))}}
 .todo{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:10px 12px;font-size:13px}
 .todo b{font-family:var(--head)}
 .todo button{margin:3px 4px 0 0;padding:3px 9px;font-size:12px}
@@ -133,10 +148,10 @@ table.sheet{border-collapse:separate;border-spacing:0;table-layout:fixed;width:1
     <button onclick="exportData()">Záloha (stáhnout)</button>
     <label class="sync" style="cursor:pointer;text-decoration:underline">Obnovit ze zálohy<input type="file" accept=".json" hidden onchange="restoreFile(this)"></label>
   </div>
-  <div class="todo" id="todo" hidden></div>
+  <div class="plan" id="plan"></div>
   <div class="chips" id="chips"></div>
   <details class="cfg"><summary>Za kolik dní psát znovu</summary>
-    <p>Po zprávě za <input type="number" min="1" id="c1"> dní FU 1, po FU 1 za <input type="number" min="1" id="c2"> dní FU 2, po FU 2 za <input type="number" min="1" id="c3"> dní FU 3. U každého člověka jde termín přepsat ručně v detailu.</p></details>
+    <p>Po zprávě za <input type="number" min="1" id="c1"> dní FU 1, po FU 1 za <input type="number" min="1" id="c2"> dní FU 2, po FU 2 za <input type="number" min="1" id="c3"> dní FU 3. Nových lidí oslovit denně: <input type="number" min="0" id="c4">. U každého člověka jde termín přepsat ručně v detailu.</p></details>
   <div class="panel" id="addPanel" hidden>
     <div class="bar">
       <input type="text" id="nName" placeholder="Jméno (např. Jan Novák – developer)" style="flex:2 1 220px">
@@ -189,9 +204,10 @@ show()})();
   var col=null,people=[],open={},filter='all',loaded=false;
   var $=function(i){return document.getElementById(i)};
   var STEPS=[['msg','Zpráva','s1'],['fu1','FU 1','s2'],['fu2','FU 2','s2'],['fu3','FU 3','s2']];
-  var cfg={fu1:3,fu2:5,fu3:7},confirmId=null,down=false,pending=false,force=false,sortKey=null,sortDir=1;
+  var cfg={fu1:3,fu2:5,fu3:7,newPerDay:5},confirmId=null,down=false,pending=false,force=false,sortKey=null,sortDir=1;
   var mq=window.matchMedia?window.matchMedia('(max-width:720px)'):{matches:false};
   try{var sv=JSON.parse(localStorage.getItem('oslovovani-cfg'));if(sv)cfg=sv}catch(e){}
+  if(typeof cfg.newPerDay!='number')cfg.newPerDay=5;
   function pad(n){return(n<10?'0':'')+n}
   function iso(d){return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())}
   function day(s){var a=s.split('-');return new Date(+a[0],+a[1]-1,+a[2])}
@@ -286,6 +302,33 @@ show()})();
     });
     return html+'</tbody></table></div>';
   }
+  var DOW=['ne','po','út','st','čt','pá','so'];
+  function renderPlan(){
+    var T=todayIso(),days=[];
+    for(var i=0;i<7;i++){var d=addDays(T,i),dt=day(d);days.push({d:d,lab:(i==0?'Dnes':i==1?'Zítra':DOW[dt.getDay()])+' '+dt.getDate()+'. '+(dt.getMonth()+1)+'.',fu:[],nw:[]})}
+    var over=0,later=0,nodate=0;
+    people.forEach(function(p){var u=due(p);if(!u)return;if(u.diff===null){nodate++;return}
+      if(u.diff<0)over++;var ix=Math.max(0,u.diff);if(ix<7)days[ix].fu.push({p:p,u:u});else later++});
+    days.forEach(function(x){x.fu.sort(function(a,b){return a.u.diff-b.u.diff})});
+    var fresh=people.filter(function(p){return !p.msg&&!p.replied&&!p.success}),per=Math.max(0,cfg.newPerDay|0),pos=0;
+    if(per>0)days.forEach(function(x){while(x.nw.length<per&&pos<fresh.length)x.nw.push(fresh[pos++])});
+    var rest=fresh.length-pos,t=days[0];
+    var h='<div class="today"><div><b>'+t.fu.length+'</b> <span>follow-upů dnes</span></div>'
+      +(over?'<div><b class="od">'+over+'</b> <span class="od">z toho po termínu</span></div>':'')
+      +'<div><b>'+t.nw.length+'</b> <span>nových k oslovení dnes (cíl '+per+'/den)</span></div>'
+      +'<div><b>'+days.reduce(function(s,x){return s+x.fu.length+x.nw.length},0)+'</b> <span>celkem na týden</span></div>'
+      +(rest>0?'<span>Dalších '+rest+' neoslovených je mimo týdenní plán.</span>':'')
+      +(nodate?'<span>'+nodate+' lidí bez data (doplň datum, ať se hlídají).</span>':'')
+      +(later?'<span>'+later+' dalších follow-upů později.</span>':'')+'</div><div class="week">';
+    days.forEach(function(x,i){
+      var n=x.fu.length+x.nw.length;
+      h+='<div class="day'+(i==0?' t':'')+'"><h4>'+x.lab+'<span>'+n+'</span></h4>';
+      x.fu.forEach(function(f){h+='<button class="fu'+(f.u.diff<0?' over':'')+'" data-a="goto" data-id="'+f.p.id+'" title="'+(f.u.diff<0?'po termínu o '+(-f.u.diff)+' d':'')+'">'+f.u.name+': '+esc(f.p.name)+'</button>'});
+      x.nw.forEach(function(p){h+='<button class="nw" data-a="goto" data-id="'+p.id+'">Zpráva: '+esc(p.name)+'</button>'});
+      if(!n)h+='<div class="none">Nic naplánováno</div>';
+      h+='</div>'});
+    $('plan').innerHTML=h+'</div>';
+  }
   function render(){
     var q=$('q').value.trim().toLowerCase(),g=$('grp').value;
     var groups=[];people.forEach(function(p){var x=p.group||'Bez skupiny';if(groups.indexOf(x)<0)groups.push(x)});
@@ -306,8 +349,7 @@ show()})();
     rows=sortRows(rows);
     var dueList=people.filter(isDue).sort(function(a,b){return due(a).diff-due(b).diff});
     document.title=(dueList.length?'('+dueList.length+') ':'')+'Oslovování';
-    var td=$('todo');td.hidden=!dueList.length;
-    td.innerHTML=dueList.length?'<b>Dnes a po termínu: '+dueList.length+'</b><br>'+dueList.map(function(p){var u=due(p);return'<button data-a="goto" data-id="'+p.id+'" class="'+(u.diff<0?'over':'')+'">'+esc(p.name)+' – '+u.name+(u.diff<0?' (+'+(-u.diff)+' d)':'')+'</button>'}).join(''):'';
+    renderPlan();
     if(!rows.length){$('list').innerHTML='<div class="empty">'+(loaded?(n?'Nikdo neodpovídá filtru.':'Zatím tu nikdo není. Klikni na „+ Přidat“ nebo „Import seznamu“.'):'Načítám…')+'</div>';return}
     /* zachovat fokus (data-id + data-f / data-k), kurzor a posun tabulky */
     var ae=document.activeElement,fk=null,cs=null,ce=null,oldTw=document.querySelector('#list .tw'),sx=0,sy=0;
@@ -363,6 +405,7 @@ show()})();
     if(isIn&&dir==1)t.blur();
   });
   if(mq.addEventListener)mq.addEventListener('change',render);else if(mq.addListener)mq.addListener(render);
+  $('c4').value=cfg.newPerDay;$('c4').addEventListener('change',function(){cfg.newPerDay=Math.max(0,Math.round(+this.value||0));this.value=cfg.newPerDay;try{localStorage.setItem('oslovovani-cfg',JSON.stringify(cfg))}catch(e){}render()});
   ['c1','c2','c3'].forEach(function(i,n){var k=['fu1','fu2','fu3'][n];$(i).value=cfg[k];$(i).addEventListener('change',function(){cfg[k]=Math.max(1,Math.round(+this.value||1));this.value=cfg[k];try{localStorage.setItem('oslovovani-cfg',JSON.stringify(cfg))}catch(e){}render()})});
   $('q').addEventListener('input',render);$('grp').addEventListener('change',render);
   function toggle(id,show){['addPanel','impPanel'].forEach(function(x){$(x).hidden=x!=id||!show})}
