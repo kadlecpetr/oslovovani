@@ -146,6 +146,7 @@ table.sheet{border-collapse:separate;border-spacing:0;table-layout:fixed;width:1
     <button class="pri" id="addBtn">+ Přidat</button>
     <button id="impBtn">Import seznamu</button>
     <button onclick="exportData()">Záloha (stáhnout)</button>
+    <button onclick="unlockData()">Načíst kontakty (heslo)</button>
     <label class="sync" style="cursor:pointer;text-decoration:underline">Obnovit ze zálohy<input type="file" accept=".json" hidden onchange="restoreFile(this)"></label>
   </div>
   <div class="plan" id="plan"></div>
@@ -197,6 +198,20 @@ show()})();
   window.claude={use:function(){return Promise.resolve({collection:function(){return col}})}};
   window.exportData=function(){var a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(data,null,1)],{type:'application/json'}));a.download='oslovovani-zaloha.json';a.click()};
   window.restoreFile=function(inp){var f=inp.files[0];inp.value='';if(!f)return;f.text().then(function(t){var o;try{o=JSON.parse(t);if(!o||typeof o!='object'||Array.isArray(o))throw 0}catch(e){alert('Soubor není platná záloha.');return}if(confirm('Přepsat všechna současná data zálohou?')){data=o;emit()}})};
+
+  function b64(x){return Uint8Array.from(atob(x),function(c){return c.charCodeAt(0)})}
+  window.unlockData=function(auto){
+    return fetch('data.enc.json',{cache:'no-store'}).then(function(r){if(!r.ok)throw 0;return r.json()}).then(function(e){
+      if(!auto&&Object.keys(data).length&&!confirm('Přepsat současná data kontakty ze šifrovaného souboru?'))return;
+      var pw=prompt('Heslo ke kontaktům:');if(!pw)return;
+      var enc=new TextEncoder();
+      return crypto.subtle.importKey('raw',enc.encode(pw),'PBKDF2',false,['deriveKey']).then(function(k){
+        return crypto.subtle.deriveKey({name:'PBKDF2',salt:b64(e.salt),iterations:e.iter,hash:'SHA-256'},k,{name:'AES-GCM',length:256},false,['decrypt'])
+      }).then(function(k){return crypto.subtle.decrypt({name:'AES-GCM',iv:b64(e.iv)},k,b64(e.ct))})
+      .then(function(b){data=JSON.parse(new TextDecoder().decode(b));emit()},function(){alert('Špatné heslo.')});
+    }).catch(function(){if(!auto)alert('Šifrovaný soubor s kontakty se nenašel.')});
+  };
+  if(!Object.keys(data).length)setTimeout(function(){unlockData(true)},400);
 })();
 </script>
 <script>
