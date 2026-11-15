@@ -53,6 +53,7 @@ button.del{color:var(--danger)}
 .detail{border-top:1px solid var(--line);padding:10px;display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px}
 .detail label{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--muted)}
 .detail .full{grid-column:1/-1}
+.detail .stp{border:1px solid var(--line);border-radius:6px;padding:8px;display:grid;gap:6px}.detail .stp textarea{width:100%;box-sizing:border-box}.detail .stp .hd{display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-size:12px;color:var(--muted)}.detail .stp .hd b{color:var(--text,inherit);font-size:13px}.detail .stp .hd button{padding:2px 8px;font-size:12px}.tl{font-size:12px;color:var(--muted);display:grid;gap:3px}.tl div{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.tl b{color:inherit}.cfg textarea{width:100%;box-sizing:border-box;display:block;margin-top:4px}
 .detail .act{display:flex;justify-content:space-between;gap:8px}
 .panel{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:12px;display:flex;flex-direction:column;gap:8px}
 .empty{color:var(--muted);text-align:center;padding:30px 10px}
@@ -152,7 +153,9 @@ table.sheet{border-collapse:separate;border-spacing:0;table-layout:fixed;width:1
   <div class="plan" id="plan"></div>
   <div class="chips" id="chips"></div>
   <details class="cfg"><summary>Za kolik dní psát znovu</summary>
-    <p>Po zprávě za <input type="number" min="1" id="c1"> dní FU 1, po FU 1 za <input type="number" min="1" id="c2"> dní FU 2, po FU 2 za <input type="number" min="1" id="c3"> dní FU 3. Nových lidí oslovit denně: <input type="number" min="0" id="c4">. U každého člověka jde termín přepsat ručně v detailu.</p></details>
+    <p>Po zprávě za <input type="number" min="1" id="c1"> dní FU 1, po FU 1 za <input type="number" min="1" id="c2"> dní FU 2, po FU 2 za <input type="number" min="1" id="c3"> dní FU 3. Nových lidí oslovit denně: <input type="number" min="0" id="c4">. U každého člověka jde termín přepsat ručně v detailu.</p>
+    <p>Šablony zpráv (použij <code>{jméno}</code> pro křestní jméno):</p>
+    <label>Zpráva<textarea rows="2" id="t0"></textarea></label><label>FU 1<textarea rows="2" id="t1"></textarea></label><label>FU 2<textarea rows="2" id="t2"></textarea></label><label>FU 3<textarea rows="2" id="t3"></textarea></label></details>
   <div class="panel" id="addPanel" hidden>
     <div class="bar">
       <input type="text" id="nName" placeholder="Jméno (např. Jan Novák – developer)" style="flex:2 1 220px">
@@ -223,6 +226,9 @@ show()})();
   var mq=window.matchMedia?window.matchMedia('(max-width:720px)'):{matches:false};
   try{var sv=JSON.parse(localStorage.getItem('oslovovani-cfg'));if(sv)cfg=sv}catch(e){}
   if(typeof cfg.newPerDay!='number')cfg.newPerDay=5;
+  if(!cfg.tpl)cfg.tpl={msg:'',fu1:'',fu2:'',fu3:''};
+  function saveCfg(){try{localStorage.setItem('oslovovani-cfg',JSON.stringify(cfg))}catch(e){}}
+  function tplText(p,k){return (cfg.tpl[k]||'').replace(/\{jm[ée]no\}/gi,String(p.name||'').split(/\s+/)[0])}
   function pad(n){return(n<10?'0':'')+n}
   function iso(d){return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())}
   function day(s){var a=s.split('-');return new Date(+a[0],+a[1]-1,+a[2])}
@@ -253,8 +259,11 @@ show()})();
   }
   var FILTERS=[['all','Všichni'],['due','K napsání'],['new','Neoslovení'],['wait','Čeká na odpověď'],['replied','Odpověděli'],['success','Úspěšní']];
   function detailHtml(p){
-    return'<div class="detail"><label>Jméno<input type="text" data-f="name" value="'+esc(p.name)+'"></label><label>Skupina<input type="text" data-f="group" value="'+esc(p.group)+'" list="grpList"></label><label>Telefon<input type="text" data-f="phone" value="'+esc(p.phone)+'"></label><label>E-mail<input type="text" data-f="email" value="'+esc(p.email)+'"></label>'+STEPS.map(function(s){return'<label>'+s[1]+' – kdy napsáno<input type="date" data-f="'+s[0]+'At" value="'+esc(p[s[0]+'At']||'')+'"></label>'}).join('')+'<label>Další kontakt (ručně)<input type="date" data-f="due" value="'+esc(p.due||'')+'"></label><label class="full">Poznámka<textarea rows="2" data-f="note">'+esc(p.note)+'</textarea></label><div class="full act"><span class="sync">'+(p.lastAt?'Poslední změna: '+new Date(p.lastAt).toLocaleDateString('cs-CZ'):'')+'</span><button class="del" data-a="del">'+(confirmId==p.id?'Opravdu smazat?':'Smazat')+'</button></div></div>';
+    return'<div class="detail"><label>Jméno<input type="text" data-f="name" value="'+esc(p.name)+'"></label><label>Skupina<input type="text" data-f="group" value="'+esc(p.group)+'" list="grpList"></label><label>Telefon<input type="text" data-f="phone" value="'+esc(p.phone)+'"></label><label>E-mail<input type="text" data-f="email" value="'+esc(p.email)+'"></label>'+STEPS.map(function(s){var k=s[0];return'<div class="full stp"><div class="hd"><b>'+s[1]+(p[k]?' ✓':'')+'</b><label style="flex-direction:row;align-items:center;gap:4px">kdy napsáno <input type="date" data-f="'+k+'At" value="'+esc(p[k+'At']||'')+'"></label><button type="button" data-a="tpl" data-k="'+k+'">Vložit šablonu</button><button type="button" data-a="cp" data-k="'+k+'">Kopírovat</button></div><textarea rows="2" data-f="'+k+'Txt" placeholder="Text, který jsi poslal ('+s[1]+')">'+esc(p[k+'Txt'])+'</textarea></div>'}).join('')+'<label>Další kontakt (ručně)<input type="date" data-f="due" value="'+esc(p.due||'')+'"></label>'+timeline(p)+'<label class="full">Poznámka<textarea rows="2" data-f="note">'+esc(p.note)+'</textarea></label><div class="full act"><span class="sync">'+(p.lastAt?'Poslední změna: '+new Date(p.lastAt).toLocaleDateString('cs-CZ'):'')+'</span><button class="del" data-a="del">'+(confirmId==p.id?'Opravdu smazat?':'Smazat')+'</button></div></div>';
   }
+  function timeline(p){var a=STEPS.filter(function(s){return p[s[0]+'Txt']||p[s[0]+'At']}).sort(function(x,y){return String(p[x[0]+'At']||'9').localeCompare(String(p[y[0]+'At']||'9'))});
+    if(!a.length)return'';return'<div class="full tl"><b>Historie komunikace</b>'+a.map(function(s){return'<div>'+(p[s[0]+'At']?fmt(p[s[0]+'At']):'?')+' · <b>'+s[1]+'</b>: '+esc(p[s[0]+'Txt']||'(bez textu)')+'</div>'}).join('')+'</div>'}
+  function lastTxt(p){for(var i=STEPS.length-1;i>=0;i--){var t=p[STEPS[i][0]+'Txt'];if(t)return' — poslední ('+STEPS[i][1]+'): '+t}return''}
   var STAGE_ORD={'new':0,wait:1,replied:2,success:3};
   function sortRows(rows){
     if(!sortKey)return rows;
@@ -286,7 +295,7 @@ show()})();
   function cbCell(p,k,label,cls,withDate){
     var on=!!p[k];
     return'<td class="c '+cls+(on?' on':'')+'"><div class="cw"><button type="button" class="cb" role="checkbox" aria-checked="'+on+'" aria-label="'+label+'" data-a="t" data-k="'+k+'"></button>'
-      +(withDate&&on&&p[k+'At']?'<button type="button" class="dt" data-a="open" title="Změnit datum v detailu">'+fmt(p[k+'At'])+'</button>':'')+'</div></td>';
+      +(withDate&&on&&p[k+'At']?'<button type="button" class="dt" data-a="open" title="'+esc(p[k+'Txt']||'Změnit datum v detailu')+'">'+fmt(p[k+'At'])+(p[k+'Txt']?' ✎':'')+'</button>':'')+'</div></td>';
   }
   function renderTable(rows){
     var cols=['36','96',null,'68','68','68','68','160','118','68','68',null];
@@ -312,7 +321,7 @@ show()})();
         +'<td class="n"><input type="text" data-f="email" aria-label="E-mail" value="'+esc(p.email)+'"></td>'
         +'<td class="n"><input type="text" data-f="phone" aria-label="Telefon" value="'+esc(p.phone)+'"></td>'
         +cbCell(p,'replied','Odpověď','cr',0)+cbCell(p,'success','Úspěšné','co',0)
-        +'<td class="nx '+ns[1]+'" title="'+esc(ns[0])+'">'+esc(ns[0])+'</td></tr>';
+        +'<td class="nx '+ns[1]+'" title="'+esc(ns[0]+lastTxt(p))+'">'+esc(ns[0])+'</td></tr>';
       if(open[p.id])html+='<tr class="dtr" data-id="'+p.id+'"><td colspan="12">'+detailHtml(p)+'</td></tr>';
     });
     return html+'</tbody></table></div>';
@@ -338,7 +347,7 @@ show()})();
     days.forEach(function(x,i){
       var n=x.fu.length+x.nw.length;
       h+='<div class="day'+(i==0?' t':'')+'"><h4>'+x.lab+'<span>'+n+'</span></h4>';
-      x.fu.forEach(function(f){h+='<button class="fu'+(f.u.diff<0?' over':'')+'" data-a="goto" data-id="'+f.p.id+'" title="'+(f.u.diff<0?'po termínu o '+(-f.u.diff)+' d':'')+'">'+f.u.name+': '+esc(f.p.name)+'</button>'});
+      x.fu.forEach(function(f){h+='<button class="fu'+(f.u.diff<0?' over':'')+'" data-a="goto" data-id="'+f.p.id+'" title="'+esc((f.u.diff<0?'po termínu o '+(-f.u.diff)+' d':'')+lastTxt(f.p))+'">'+f.u.name+': '+esc(f.p.name)+'</button>'});
       x.nw.forEach(function(p){h+='<button class="nw" data-a="goto" data-id="'+p.id+'">Zpráva: '+esc(p.name)+'</button>'});
       if(!n)h+='<div class="none">Nic naplánováno</div>';
       h+='</div>'});
@@ -389,6 +398,8 @@ show()})();
     if(t.dataset.a=='goto'){open[t.dataset.id]=true;render();var el=document.querySelector('#list [data-id="'+t.dataset.id+'"]');if(el)el.scrollIntoView({block:'center'})}
     else if(t.dataset.a=='tog'){open[id]=!open[id];render()}
     else if(t.dataset.a=='open'){open[id]=true;render()}
+    else if(t.dataset.a=='tpl'&&p){var kk=t.dataset.k,pt={};pt[kk+'Txt']=tplText(p,kk);if(!pt[kk+'Txt']){alert('Šablona pro tento krok je prázdná. Vyplň ji dole v „Za kolik dní psát znovu“.');return}force=true;save(id,pt)}
+    else if(t.dataset.a=='cp'&&p){var kk2=t.dataset.k,tx=p[kk2+'Txt']||tplText(p,kk2);if(!tx){alert('Není co kopírovat.');return}try{navigator.clipboard.writeText(tx).then(function(){t.textContent='Zkopírováno ✓';setTimeout(function(){t.textContent='Kopírovat'},1500)},function(){prompt('Zkopíruj text:',tx)})}catch(e){prompt('Zkopíruj text:',tx)}}
     else if(t.dataset.a=='t'&&p){
       var k=t.dataset.k,v=!p[k],patch={},T=todayIso(),ST=['msg','fu1','fu2','fu3'],ix=ST.indexOf(k);patch[k]=v;
       if(ix>=0){patch.due='';patch[k+'At']=v?T:'';
@@ -422,6 +433,7 @@ show()})();
   if(mq.addEventListener)mq.addEventListener('change',render);else if(mq.addListener)mq.addListener(render);
   $('c4').value=cfg.newPerDay;$('c4').addEventListener('change',function(){cfg.newPerDay=Math.max(0,Math.round(+this.value||0));this.value=cfg.newPerDay;try{localStorage.setItem('oslovovani-cfg',JSON.stringify(cfg))}catch(e){}render()});
   ['c1','c2','c3'].forEach(function(i,n){var k=['fu1','fu2','fu3'][n];$(i).value=cfg[k];$(i).addEventListener('change',function(){cfg[k]=Math.max(1,Math.round(+this.value||1));this.value=cfg[k];try{localStorage.setItem('oslovovani-cfg',JSON.stringify(cfg))}catch(e){}render()})});
+  ['msg','fu1','fu2','fu3'].forEach(function(k,n){var el=$('t'+n);el.value=cfg.tpl[k]||'';el.addEventListener('change',function(){cfg.tpl[k]=this.value;saveCfg()})});
   $('q').addEventListener('input',render);$('grp').addEventListener('change',render);
   function toggle(id,show){['addPanel','impPanel'].forEach(function(x){$(x).hidden=x!=id||!show})}
   $('addBtn').onclick=function(){toggle('addPanel',$('addPanel').hidden);$('nName').focus()};
